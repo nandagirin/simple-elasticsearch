@@ -1,0 +1,23 @@
+---
+  - hosts: all
+    become: true
+    tasks:
+    - name: Install docker using yum
+      yum:
+        name: docker
+        state: latest
+
+    - name: Install python pip
+      yum:
+        name: python-pip
+        state: latest
+
+    - name: Install python docker package using pip
+      pip:
+        name: docker
+
+    - name: Start docker service
+      service:
+        name: docker
+        state: started
+      
