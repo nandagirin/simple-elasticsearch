@@ -20,4 +20,20 @@
       service:
         name: docker
         state: started
+
+    - name: Add remote user to "docker" group
+      remote_user: "{{ hostvars[groups['ec2'][0]].ansible_user }}"
+      user:
+        name: "{{ hostvars[groups['ec2'][0]].ansible_user }}"
+        group: "docker"
+        append: yes
+      tags:
+        - docker
+
+    - name: Install docker-compose
+      remote_user: "{{ hostvars[groups['ec2'][0]].ansible_user }}"
+      get_url: 
+        url : https://github.com/docker/compose/releases/download/1.26.0/docker-compose-Linux-x86_64
+        dest: /usr/local/bin/docker-compose
+        mode: '+x'
       
