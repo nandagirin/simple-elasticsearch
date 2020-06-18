@@ -1,6 +1,8 @@
 locals {
   # Project wide
   project_name = var.project_name
+  ansible_user = var.ansible_user
+  private_key  = trimsuffix(var.key_path, ".pub")
 
   # AWS config
   aws_region          = var.aws_region
@@ -74,12 +76,23 @@ resource "aws_instance" "this" {
   vpc_security_group_ids      = [aws_security_group.this.id]
   subnet_id                   = random_shuffle.subnet_id.result[0]
   associate_public_ip_address = local.associate_public_ip
-  
+
   root_block_device {
     volume_type           = local.root_block_device["volume_type"]
     volume_size           = local.root_block_device["volume_size"]
     delete_on_termination = local.root_block_device["delete_on_termination"]
     encrypted             = local.root_block_device["encrypted"]
+  }
+
+  provisioner "local-exec" {
+    command = <<EOT
+      sleep 30;
+      >hosts;
+      echo "[ec2]" | tee -a hosts;
+      echo "${aws_instance.this.public_ip} ansible_user=${local.ansible_user} ansible_ssh_private_key_file=${local.private_key}" | tee -a hosts;
+      export ANSIBLE_HOST_KEY_CHECKING=False;
+      ansible-playbook -u ${local.ansible_user} --private-key ${local.private_key} -i hosts ../ansible/install-docker.yml
+    EOT
   }
 
   tags = {

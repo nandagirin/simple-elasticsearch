@@ -47,3 +47,7 @@ variable "root_block_device" {
     encrypted             = bool
   })
 }
+
+variable "ansible_user" {
+  type = string
+}
