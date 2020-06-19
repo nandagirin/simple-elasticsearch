@@ -87,11 +87,12 @@ resource "aws_instance" "this" {
   provisioner "local-exec" {
     command = <<EOT
       sleep 30;
-      >hosts;
-      echo "[ec2]" | tee -a hosts;
-      echo "${aws_instance.this.public_ip} ansible_user=${local.ansible_user} ansible_ssh_private_key_file=${local.private_key}" | tee -a hosts;
+      echo "[ec2]" | tee -a ../ansible/hosts;
+      echo "${aws_instance.this.public_ip} ansible_user=${local.ansible_user} ansible_ssh_private_key_file=${local.private_key}" | tee -a ../ansible/hosts;
+      cd ../ansible;
       export ANSIBLE_HOST_KEY_CHECKING=False;
-      ansible-playbook -u ${local.ansible_user} --private-key ${local.private_key} -i hosts ../ansible/install-docker.yml
+      ansible-playbook -i hosts ./install-docker.yml
+      ansible-playbook -i hosts ./elasticsearch.yml
     EOT
   }
 
