@@ -1,0 +1,100 @@
+---
+  - name: Deploy Elasticsearch and Kibana using Docker
+    hosts: ec2
+    gather_facts: no
+    become: true
+    vars:
+      - VERSION: 7.8.0
+      - CERTS_DIR: /usr/share/elasticsearch/config/certificates
+    tasks:
+      - name: Create cert volume
+        docker_volume:
+          name: es_certs
+
+      - name: Create elasticsearch volume
+        docker_volume:
+          name: data01
+
+      - name: Create a network
+        docker_network:
+          name: es_network
+
+      - name: Copy instances.yml
+        copy: src=instances.yml dest=~/ mode=0777
+
+      - name: Create certificate
+        docker_container:
+          name: create_certs
+          image: docker.elastic.co/elasticsearch/elasticsearch:{{ VERSION }}
+          auto_remove: true
+          command: >
+            bash -c '
+              yum install -y -q -e 0 unzip;
+              if [[ ! -f /certs/bundle.zip ]]; then
+                bin/elasticsearch-certutil cert --silent --pem --in config/certificates/instances.yml -out /certs/bundle.zip;
+                unzip /certs/bundle.zip -d /certs;
+              fi;
+              chown -R 1000:0 /certs
+            '
+          working_dir: /usr/share/elasticsearch
+          volumes:
+            - es_certs:/certs
+            - ~/:/usr/share/elasticsearch/config/certificates
+      
+      - name: Sleep for 10 seconds to wait create_certs to be done
+        wait_for:
+          timeout: 10
+      
+      - name: Start elasticsearch es01
+        docker_container:
+          name: es01
+          image: docker.elastic.co/elasticsearch/elasticsearch:{{ VERSION }}
+          working_dir: /usr/share/elasticsearch
+          env:
+            node.name: es01
+            cluster.name: es-docker-cluster
+            discovery.type: single-node
+            bootstrap.memory_lock: "true"
+            ES_JAVA_OPTS: -Xms128m -Xmx128m
+            xpack.license.self_generated.type: trial 
+            xpack.security.enabled: "true"
+            xpack.security.http.ssl.enabled: "true" 
+            xpack.security.http.ssl.key: "{{ CERTS_DIR }}/es01/es01.key"
+            xpack.security.http.ssl.certificate_authorities: "{{ CERTS_DIR }}/ca/ca.crt"
+            xpack.security.http.ssl.certificate: "{{ CERTS_DIR }}/es01/es01.crt"
+            xpack.security.transport.ssl.enabled: "true" 
+            xpack.security.transport.ssl.verification_mode: certificate 
+            xpack.security.transport.ssl.certificate_authorities: "{{ CERTS_DIR }}/ca/ca.crt"
+            xpack.security.transport.ssl.certificate: "{{ CERTS_DIR }}/es01/es01.crt"
+            xpack.security.transport.ssl.key: "{{ CERTS_DIR }}/es01/es01.key"
+          volumes:
+            - data01:/usr/share/elasticsearch/data
+            - es_certs:{{ CERTS_DIR }}
+          ulimits:
+            - nofile:65535:65535
+            - memlock:-1:-1
+          ports:
+            - 9200:9200
+          networks:
+            - name: es_network
+          networks_cli_compatible: false
+          healthcheck:
+            test: curl --cacert $CERTS_DIR/ca/ca.crt -s https://localhost:9200 >/dev/null; if [[ $$? == 52 ]]; then echo 0; else echo 1; fi
+            interval: 30s
+            timeout: 10s
+            retries: 5
+
+      - name: Sleep for 70 seconds to wait es01 healthy
+        wait_for:
+          timeout: 70
+      
+      - name: Execute commands to generate random password in es01 docker container
+        command: docker exec es01 /bin/bash -c "bin/elasticsearch-setup-passwords auto --batch --url https://localhost:9200" > .creds
+        register: output
+      
+      - name: Copy the output to a local file
+        copy:
+          content: "{{ output.stdout }}"
+          dest: ".es_creds"
+        delegate_to: localhost
+        become: false
